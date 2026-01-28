@@ -129,6 +129,10 @@ class RawFunctionTool(Protocol):
 F = TypeVar("F", bound=Callable[..., Awaitable[Any]])
 Raw_F = TypeVar("Raw_F", bound=Callable[..., Awaitable[Any]])
 
+# Type alias for compatibility with newer plugins
+Tool = Union[FunctionTool, RawFunctionTool]
+
+
 
 @overload
 def function_tool(

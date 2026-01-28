@@ -74,6 +74,7 @@ from .generation import (
     remove_instructions,
     update_instructions,
 )
+from .interrupt_filter import InterruptFilter, InterruptFilterConfig
 from .speech_handle import SpeechHandle
 
 if TYPE_CHECKING:
@@ -163,6 +164,15 @@ class AgentActivity(RecognitionHooks):
 
         # speeches that audio playout finished but not done because of tool calls
         self._background_speeches: set[SpeechHandle] = set()
+
+        # Initialize interrupt filter with session options
+        opt = self._session.options
+        filter_config = InterruptFilterConfig(
+            ignore_words=opt.ignore_words if opt.ignore_words else InterruptFilterConfig().ignore_words,
+            command_words=opt.command_words if opt.command_words else InterruptFilterConfig().command_words,
+            enabled=opt.interrupt_filter_enabled,
+        )
+        self._interrupt_filter = InterruptFilter(filter_config)
 
     def _validate_turn_detection(
         self, turn_detection: TurnDetectionMode | None
@@ -1166,7 +1176,15 @@ class AgentActivity(RecognitionHooks):
         )
         self._schedule_speech(handle, SpeechHandle.SPEECH_PRIORITY_NORMAL)
 
-    def _interrupt_by_audio_activity(self) -> None:
+    def _interrupt_by_audio_activity(self, transcript: str | None = None) -> None:
+        """Handle potential interruption by audio activity.
+        
+        Args:
+            transcript: The current STT transcript, if available. When provided,
+                       the interrupt filter will use this to determine if the
+                       input should be ignored (e.g., passive acknowledgements
+                       like "yeah", "ok", "hmm").
+        """
         opt = self._session.options
         use_pause = opt.resume_false_interruption and opt.false_interruption_timeout is not None
 
@@ -1174,25 +1192,47 @@ class AgentActivity(RecognitionHooks):
             # ignore if realtime model has turn detection enabled
             return
 
+        # Get transcript from audio recognition if not provided
+        if transcript is None and self._audio_recognition is not None:
+            transcript = self._audio_recognition.current_transcript
+
         if (
             self.stt is not None
             and opt.min_interruption_words > 0
             and self._audio_recognition is not None
         ):
-            text = self._audio_recognition.current_transcript
+            text = transcript or ""
 
             # TODO(long): better word splitting for multi-language
             if len(split_words(text, split_character=True)) < opt.min_interruption_words:
                 return
 
-        if self._rt_session is not None:
-            self._rt_session.start_user_activity()
-
-        if (
+        # Check if agent is speaking
+        agent_is_speaking = (
             self._current_speech is not None
             and not self._current_speech.interrupted
             and self._current_speech.allow_interruptions
+        )
+
+        # Use interrupt filter to determine if we should ignore this input
+        if (
+            transcript
+            and agent_is_speaking
+            and self._interrupt_filter.enabled
+            and self._interrupt_filter.should_ignore(transcript, agent_is_speaking)
         ):
+            # This is a passive acknowledgement (like "yeah", "ok")
+            # Don't interrupt, just continue speaking
+            logger.debug(
+                "ignoring passive acknowledgement while speaking",
+                extra={"transcript": transcript},
+            )
+            return
+
+        if self._rt_session is not None:
+            self._rt_session.start_user_activity()
+
+        if agent_is_speaking:
             self._paused_speech = self._current_speech
 
             # reset the false interruption timer
@@ -1261,7 +1301,7 @@ class AgentActivity(RecognitionHooks):
             "manual",
             "realtime_llm",
         ):
-            self._interrupt_by_audio_activity()
+            self._interrupt_by_audio_activity(transcript=ev.alternatives[0].text)
 
             if (
                 speaking is False
@@ -1292,7 +1332,7 @@ class AgentActivity(RecognitionHooks):
             "manual",
             "realtime_llm",
         ):
-            self._interrupt_by_audio_activity()
+            self._interrupt_by_audio_activity(transcript=ev.alternatives[0].text)
 
             if (
                 speaking is False

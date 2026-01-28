@@ -45,7 +45,10 @@ from .llm.chat_context import (
     FunctionCall,
     FunctionCallOutput,
 )
-from .llm.tool_context import FunctionTool, StopResponse, ToolError, function_tool
+from .llm.tool_context import FunctionTool, StopResponse, ToolError, function_tool, Tool
+
+# Alias for compatibility with newer plugins  
+ProviderTool = Tool
 from .plugin import Plugin
 from .types import (
     DEFAULT_API_CONNECT_OPTIONS,

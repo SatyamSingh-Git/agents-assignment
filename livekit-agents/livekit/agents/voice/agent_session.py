@@ -89,6 +89,10 @@ class AgentSessionOptions:
     preemptive_generation: bool
     tts_text_transforms: Sequence[TextTransforms] | None
     ivr_detection: bool
+    # Intelligent interruption filtering options
+    interrupt_filter_enabled: bool
+    ignore_words: frozenset[str] | None
+    command_words: frozenset[str] | None
 
 
 Userdata_T = TypeVar("Userdata_T")
@@ -159,6 +163,10 @@ class AgentSession(rtc.EventEmitter[EventTypes], Generic[Userdata_T]):
         tts_text_transforms: NotGivenOr[Sequence[TextTransforms] | None] = NOT_GIVEN,
         preemptive_generation: bool = False,
         ivr_detection: bool = False,
+        # Intelligent interruption filtering
+        interrupt_filter_enabled: bool = True,
+        ignore_words: NotGivenOr[list[str] | frozenset[str]] = NOT_GIVEN,
+        command_words: NotGivenOr[list[str] | frozenset[str]] = NOT_GIVEN,
         conn_options: NotGivenOr[SessionConnectOptions] = NOT_GIVEN,
         loop: asyncio.AbstractEventLoop | None = None,
         # deprecated
@@ -288,6 +296,10 @@ class AgentSession(rtc.EventEmitter[EventTypes], Generic[Userdata_T]):
             use_tts_aligned_transcript=use_tts_aligned_transcript
             if is_given(use_tts_aligned_transcript)
             else None,
+            # Intelligent interruption filtering
+            interrupt_filter_enabled=interrupt_filter_enabled,
+            ignore_words=frozenset(ignore_words) if is_given(ignore_words) else None,
+            command_words=frozenset(command_words) if is_given(command_words) else None,
         )
         self._conn_options = conn_options or SessionConnectOptions()
         self._started = False
